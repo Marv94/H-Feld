@@ -336,10 +336,10 @@ static void initDisplay(void) {
 
 /***** Other functions *****/
 void setDisplayLight(void) {
-	// TODO display 'Beleuchtung einstellen'
 	clearLcd();
 	printText("Beleuchtung<einstellen:");
 	_delay_ms(2000);
+	// Beleuchtungsgrad in % anzeigen
 	char tempArr[4];
 	clearLcd();
 	printText("Up/Down   MFT=OK<");
@@ -348,7 +348,9 @@ void setDisplayLight(void) {
 	printText("%");
 	
 	while (isUpPushed()) ;
+	// nachdem button up losgelassen wurde
 	do {
+		// PWM erhöhen
 		if (isUpPushed() && !isDownPushed()) {
 			if (currentPWM <= (0xE6)) {
 				currentPWM += 25;
@@ -357,9 +359,7 @@ void setDisplayLight(void) {
 				currentPWM = 0xFF;
 				OCR2 = currentPWM;
 			}
-			setPins(0, 0,   0, 1, 1, 0,   0, 0, 0, 0);
-			enable();
-			_delay_us(50);
+			// %-Anzeige aktualisieren
 			clearLcd();
 			printText("Up/Down   MFT=OK<");
 			sprintf(tempArr, "%d", (100*currentPWM/255));
@@ -367,6 +367,7 @@ void setDisplayLight(void) {
 			printText("%");
 			_delay_ms(400);
 		}
+		// PWM verringern
 		if (isDownPushed() && !isUpPushed()) {
 			if (currentPWM > 24) {
 				currentPWM -= 25;
@@ -375,9 +376,7 @@ void setDisplayLight(void) {
 				currentPWM = 0x00;
 				OCR2 = currentPWM;
 			}
-			setPins(0, 0,   0, 1, 1, 0,   0, 0, 0, 0);
-			enable();
-			_delay_us(50);
+			// %-Anzeige aktualisieren
 			clearLcd();
 			printText("Up/Down   MFT=OK<");
 			sprintf(tempArr, "%d", (100*currentPWM/255));
@@ -386,17 +385,14 @@ void setDisplayLight(void) {
 			_delay_ms(400);
 		}
 	} while (!isMFTPushed());
-	// TODO display 'Beleuchtung eingestellt'
 	clearLcd();
 	printText("Beleuchtung<eingestellt!");
 	eeprom_busy_wait();
 	eeprom_write_byte(&EE_ADDRESS_PWM, currentPWM);
-	_delay_ms(1500); // evtl zu kurz?
-	// TODO Tasten-Flags löschen?
+	_delay_ms(1500);
 }
 
 void calibrate(void) {
-	// TODO display '0dBm anlegen\n MFT drücken'
 	clearLcd();
 	printText("-0.1dBm anlegen<MFT drÜcken");
 	
@@ -408,7 +404,6 @@ void calibrate(void) {
 	while (isMFTPushed()) {
 		_delay_ms(200);
 	}
-	// TODO display '-50dBm anlegen\n MFT drücken'
 	clearLcd();
 	printText("-50dBm anlegen<MFT drÜcken");
 	/* Wait until button isn't pressed */
@@ -419,10 +414,9 @@ void calibrate(void) {
 	eeprom_busy_wait();
 	eeprom_write_float(&EE_ADDRESS_DBM_STEPSIZE, stepSize);
 
-	// TODO display 'kalibriert'
 	clearLcd();
 	printText("Kalibrierung<erfolgreich!");
-	_delay_ms(1500); // evtl zu kurz 500 -> 1500?
+	_delay_ms(1500);
 }
 
 void calculate(void) {
@@ -458,7 +452,6 @@ void displayData(void) {
 			char str[6];
 			sprintf(str, "%d", measuredPower);
 			
-			// TODO display '             dBm'
 			/* Set cursor line 1,1 */
 			clearLcd();
 			int i = 0;
@@ -474,12 +467,9 @@ void displayData(void) {
 				printText("<rechne...");
 				hugeChange = false;
 			}
-			// TODO display Messwert einfügen: measuredPower
-			// TODO display (Zeile 2): Berechnete Milliwatt: measuredMilliwatt
 			break;
 		case MODE_MAGNETIC_FIELD:
 			magneticFieldStrength = 0;
-			// TODO display 'H-Feld / H-Sonde'
 			clearLcd();
 			printText(TEXT_MAGNATIC_FIELD);
 			double testF = 2.56/1024 * (double)currentLogAmpSignal;
@@ -495,7 +485,6 @@ void displayData(void) {
 				after[0] = '0';
 				after[1] = t;
 			}
-			// TODO display (Zeile 2) 'mA/m = magneticFieldStrength'
 			i = 0;
 			do
 			{
@@ -520,7 +509,6 @@ void displayData(void) {
 
 void voltageControl(void) {
 	if (!hasUserFlag(F_HAS_WIRE) && currentVoltageBatt < (MIN_VOLTAGE_BATT + 10)) {
-		// TODO display 'Batterie schwach'
 		clearLcd();
 		printText("Batterie schwach");
 		do {
@@ -590,7 +578,7 @@ int main(int argc, const char *argv[])
 	ADCSRA = 0x8F;
 
 	// Starten mit Batterieprüfung
-	setADChannel(CHANNEL_VOLTAGE_BATT);
+	// setADChannel(CHANNEL_VOLTAGE_BATT);
 
 	// PWM-Initialisierung
 	/* Timer/Counter Control Register 2
@@ -614,14 +602,15 @@ int main(int argc, const char *argv[])
 	setADChannel(CHANNEL_LOGAMP);
 	
 	/* Interrupts setup */
-	GICR = 1 << INT1;  //turn on Interrupt1
-	MCUCR = (1 << ISC11) & ~(1 << ISC10);	// interrupt on falling edge
+	MCUCR |= (1 << ISC01);
+	MCUCR &= ~(1 << ISC00);	// interrupt on falling edge
 	GICR = 1 << INT0;  //turn on Interrupt0
-	MCUCR = (1 << ISC01) & ~(1 << ISC00);	// interrupt on falling edge
+	MCUCR |= (1 << ISC11);
+	MCUCR &= ~(1 << ISC10);	// interrupt on falling edge
+	GICR = 1 << INT1;  //turn on Interrupt1
 	sei();
 	enableADConversion();
 
-	// TODO Initialisierung des Displays
 	/* Display initialization */
 	initDisplay();
 	uint8_t displayUpdateCounter = 0;
@@ -659,8 +648,8 @@ int main(int argc, const char *argv[])
 	}
 
 	/* Interrupts for INT0 und INT1 aktivieren */
-	GICR |= 1<<6;
-	GICR |= 1<<7;
+	GICR |= 1<<INT0;
+	GICR |= 1<<INT1;
 	disableLogAmp();
 	calculate();
 	displayData();
@@ -683,8 +672,6 @@ int main(int argc, const char *argv[])
 			calculate();
 			displayData();
 		}
-		// TODO display
-		// TODO Betriebsmodus, Helligkeit etc. schalten
 		//voltageControl();
 		if (currentOpMode != MODE_POWER && isDownPushed()) {
 			// TODO
@@ -696,6 +683,9 @@ int main(int argc, const char *argv[])
 		 */
 		if(isDownPushed()) {
 			setUserFlag(F_IN_SETTINGS);
+			// disable interrupts while in settings
+			GICR &= ~(1<<INT0);
+			GICR &= ~(1<<INT1);
 			if(isUpPushed()) {
 				setDisplayLight();
 			} else if (isMFTPushed()) {
@@ -707,9 +697,11 @@ int main(int argc, const char *argv[])
 				calibrate();
 			}
 		}
-		/* Flag clearen wenn down nicht mehr gedrückt ist */
+		// Button Interrupts wieder aktivieren wenn Down nicht mehr gedrückt
 		if(hasUserFlag(F_IN_SETTINGS)) {
 			if(!isDownPushed()) {
+				GICR |= 1<<INT0;
+				GICR |= 1<<INT1;
 				unsetUserFlag(F_IN_SETTINGS);
 			}
 		}
@@ -720,36 +712,24 @@ int main(int argc, const char *argv[])
 }
 
 ISR(INT0_vect) {
-	if(!hasUserFlag(F_IN_SETTINGS)) {
-		if (!hasUserFlag(F_OPMODE_CHANGE)) {
-			switch (currentOpMode) {
-				case MODE_POWER:
-					setOpMode(MODE_MAGNETIC_FIELD);
-					break;
-				case MODE_MAGNETIC_FIELD:
-					setOpMode(MODE_POWER);
-					break;
-			}
+	if (!hasUserFlag(F_OPMODE_CHANGE)) {
+		switch (currentOpMode) {
+			case MODE_POWER:
+			setOpMode(MODE_MAGNETIC_FIELD);
+			break;
+			case MODE_MAGNETIC_FIELD:
+			setOpMode(MODE_POWER);
+			break;
 		}
-		_delay_ms(1);
-		// TODO Warten bis Taste losgelassen ist?
 	}
+	_delay_ms(1);
 }
 
 ISR(INT1_vect) {
-	/*if(!hasUserFlag(F_IN_SETTINGS)) {
+	if(!hasUserFlag(F_TOGGLE_LOG)) {
 		setUserFlag(F_TOGGLE_LOG);
-		if (currentOpMode == MODE_POWER) {
-			// do what?
-		} else {
-			if (!isUpPushed()) {
-				// do what?
-			}
-		}
-		_delay_ms(1);
-		// TODO Warten bis Taste losgelassen ist?
-	}*/
-	setUserFlag(F_TOGGLE_LOG);
+	}
+	_delay_ms(1);
 }
 
 ISR(ADC_vect) {
