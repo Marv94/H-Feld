@@ -49,7 +49,7 @@ uint8_t currentADChannel;
 #define CHANNEL_VOLTAGE_BATT 2
 
 /* ein array für mittelwertbildung */
-uint16_t measuredValues[20];
+uint16_t measuredValues[40];
 uint8_t arrayCounter = 0;
 
 /* Aktuelle Betriebsart
@@ -433,18 +433,27 @@ void calculate(void) {
 
 bool floorValue = true;
 bool hugeChange = false;
-#define TEXT_MAGNATIC_FIELD "LogAmp out:<"
+#define TEXT_MAGNATIC_FIELD "H = "
+#define FORMULA_N 1
+#define FORMULA_A 0.01988
+#define frequency 13560000
+#define FORMULA_w (M_PI*2*frequency)
+#define FORMULA_MueNull (M_PI*4 * 0.0000001)
+#define FORMULA_MueR 1
 void displayData(void) {
 	if (!hasUserFlag(F_NEW_DATA) && !hasUserFlag(F_NEW_DATA)) {
 		return;
 	}
+	double arrayAvrg = 0;
+	for(int j = 0; j < 40; j++) {
+		arrayAvrg += measuredValues[j];
+	}
+	arrayAvrg /= 40;
 	switch (currentOpMode) {
 		case MODE_POWER:
 			/* Arraywerte holen und Mittelwert bilden */
-			for(int j = 0; j < 20; j++) {
-				measuredPower += measuredValues[j];
-			}
-			measuredPower /= 20;
+			
+			measuredPower = arrayAvrg;
 			/* Wenn Wert nicht geglättet werden soll wird currentLogAmpSignal genommen */
 			if(!floorValue) {
 				measuredPower = currentLogAmpSignal;
@@ -472,9 +481,22 @@ void displayData(void) {
 			magneticFieldStrength = 0;
 			clearLcd();
 			printText(TEXT_MAGNATIC_FIELD);
-			double testF = 2.56/1024 * (double)currentLogAmpSignal;
-			uint32_t temp = testF * 100;
-			uint16_t a = testF;
+			double ergebnis = 2.56/1024 * (double)arrayAvrg;
+			double dBm = (ergebnis - 1.996) / 0.0252; // = dBm
+			/*             /--------------------------,         /--,
+			 * Upeak = \  / 10^(dBm/10)  * 0.001 * 50 |  *  \  / 2 |
+			 *eingang   \/                            |      \/    |
+			 */
+		    double Ue = sqrt(pow(10, (dBm/10)) * 0.001 * 50) * sqrt(2);
+			/*               û
+			 * H = ----------------------
+			 *      N * A * w * µ0 * µr
+			 */
+			
+			ergebnis = ((Ue) / (FORMULA_N * FORMULA_A * FORMULA_w * FORMULA_MueNull * FORMULA_MueR)) * 1000;
+			
+			uint32_t temp = ergebnis * 100;
+			uint16_t a = ergebnis;
 			uint16_t b = temp % 100;
 			char before[4];
 			char after[2];
@@ -500,7 +522,36 @@ void displayData(void) {
 				printChar(after[i]);
 				i++;
 			} while (after[i] != NULL);
-			printText(" V");
+			printText(" mA/m<");
+			//DBM
+			uint32_t temp2 = dBm * 100;
+			uint16_t a2 = dBm;
+			uint16_t b2 = temp2 % 100;
+			char before2[4];
+			char after2[2];
+			sprintf(before2, "%d", a2);
+			sprintf(after2, "%d", b2);
+			if(b2 < 10) {
+				char t2 = after[0];
+				after2[0] = '0';
+				after2[1] = t2;
+			}
+			i = 0;
+			do
+			{
+				printChar(before2[i]);
+				i++;
+			} while (before2[i] != NULL);
+			i=0;
+			if(after2 != NULL) {
+				printChar('.');
+			}
+			do
+			{
+				printChar(after2[i]);
+				i++;
+			} while (after2[i] != NULL);
+			printText(" d");
 			break;
 	}
 	unsetUserFlag(F_NEW_DATA);
@@ -621,8 +672,8 @@ int main(int argc, const char *argv[])
 	printText("H-Feld-Messger");
 	printChar(0xE1);
 	printText("t<      V2.0");
-	for(int w = 0; w < 20; w++){
-		_delay_ms(75);
+	for(int w = 0; w < 40; w++){
+		_delay_ms(37);
 		enableADConversion();
 	}
 	clearLcd();
@@ -657,7 +708,7 @@ int main(int argc, const char *argv[])
 	while(1) {
 		displayUpdateCounter++;
 		/* Jeden 5. Loop (alle 250ms) display updaten */
-		if(displayUpdateCounter == 5) {
+		if(displayUpdateCounter == 10) {
 			/* Zu Testzwecken
 			 * Wenn Button UP Flag F_TOGGLE_LOG gesetzt hat
 			 * wird die Wertglättung an/aus geschaltet.
@@ -707,7 +758,7 @@ int main(int argc, const char *argv[])
 		}
 		/* ADConversion alle 50ms */
 		enableADConversion();
-		_delay_ms(50);
+		_delay_ms(25);
 	}
 }
 
@@ -742,7 +793,7 @@ ISR(ADC_vect) {
 			currentLogAmpSignal += result;
 			currentLogAmpSignal /= 2;
 			/* Durchs array rotieren und Werte erneuern */
-			if(arrayCounter > 19) {
+			if(arrayCounter > 39) {
 				arrayCounter = 0;
 			}
 			/* Bei großer Änderung hugeChange auf true setzen */
