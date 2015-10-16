@@ -29,13 +29,15 @@ uint8_t currentPWM;
 
 /* Adressen im EEPROM */
 // für Referenzwerte
-float EE_ADDRESS_0DBM_REFERENCE EEMEM = 0x0000;
-float EE_ADDRESS_DBM_STEPSIZE EEMEM = 0x0004;
+float EEMEM EE_ADDRESS_0DBM_REFERENCE  = 0x0000;
+float EEMEM EE_ADDRESS_50DBM_REFERENCE = 0x0080;
+float EEMEM EE_ADDRESS_DBM_STEPSIZE  = 0x0040;
 // für letzte PWM-Einstellung
-uint8_t EE_ADDRESS_PWM EEMEM = 0x00F0;
+uint8_t EEMEM EE_ADDRESS_PWM  = 0x00F0;
 
 /* Aktuelle Referenzwerte */
 float reference0dbm;
+float reference50dbm;
 float stepSize;
 
 /* Aktueller Messkanal
@@ -95,7 +97,7 @@ int previousLogAmpSignal = 10;
 int currentVoltageWire = 0;
 int currentVoltageBatt = 0;
 
-signed int measuredPower = 0;
+double measuredPower = 0;
 double measuredMilliwatt = 0;
 double magneticFieldStrength = 0;
 
@@ -142,21 +144,25 @@ void setADChannel(uint8_t channel) {
 	currentADChannel = channel;
 }
 
-int isMFTPushed(void) {
+bool isMFTPushed(void) {
 	// Bit 2 auf Port D
 	return (PIND & (1<<2)) == 0;
 }
 
 void waitForMFTPush(void) {
-	while (!isMFTPushed()) ;
+	enableADConversion();
+	while (!isMFTPushed()) {
+		_delay_ms(25);
+		enableADConversion();
+	};
 }
 
-uint8_t isUpPushed(void) {
+bool isUpPushed(void) {
 	// Bit 3 auf Port D
 	return (PIND & (1<<3)) == 0;
 }
 
-uint8_t isDownPushed(void) {
+bool isDownPushed(void) {
 	// Bit 4 auf Port D
 	return (PIND & (1<<4)) == 0;
 }
@@ -176,7 +182,7 @@ uint8_t isDownPushed(void) {
 #define LCD_DB0		PB0
 
 /* Reset all lcd-related pins */
-static void resetPins( void )
+void resetPins( void )
 {
 	PORTC &= ~(1 << LCD_RS);
 	PORTC &= ~(1 << LCD_RW);
@@ -187,7 +193,7 @@ static void resetPins( void )
 * setPins(RS, RW, DB7 - DB4, DB3 - DB0);
 * setPins(RW, RW,   DB7, DB6, DB5, DB4,   DB3, DB2, DB1, DB0);
 */
-static void setPins(bool _rs, bool _rw, bool d7, bool d6, bool d5, bool d4, bool d3, bool d2, bool d1, bool d0)
+void setPins(bool _rs, bool _rw, bool d7, bool d6, bool d5, bool d4, bool d3, bool d2, bool d1, bool d0)
 {
 	// RS
 	if (_rs) {
@@ -202,66 +208,19 @@ static void setPins(bool _rs, bool _rw, bool d7, bool d6, bool d5, bool d4, bool
 		} else {
 		PORTC &= ~(1 << LCD_RW);
 	}
-	// Data
-	if (d7)
-	{
-		PORTB |= (1 << LCD_DB7);
-	} else {
-		PORTB &= ~(1 << LCD_DB7);
-	}
-	if (d6)
-	{
-		PORTB |= (1 << LCD_DB6);
-	} else {
-		PORTB &= ~(1 << LCD_DB6);
-	}
-	if (d5)
-	{
-		PORTB |= (1 << LCD_DB5);
-	} else {
-		PORTB &= ~(1 << LCD_DB5);
-	}
-	if (d4)
-	{
-		PORTB |= (1 << LCD_DB4);
-	} else {
-		PORTB &= ~(1 << LCD_DB4);
-	}
-	if (d3)
-	{
-		PORTB |= (1 << LCD_DB3);
-	} else {
-		PORTB &= ~(1 << LCD_DB3);
-	}
-	if (d2)
-	{
-		PORTB |= (1 << LCD_DB2);
-		} else {
-		PORTB &= ~(1 << LCD_DB2);
-	}
-	if (d1)
-	{
-		PORTB |= (1 << LCD_DB1);
-	} else {
-		PORTB &= ~(1 << LCD_DB1);
-	}
-	if (d0)
-	{
-		PORTB |= (1 << LCD_DB0);
-	} else {
-		PORTB &= ~(1 << LCD_DB0);
-	}
+	// Data bits
+	PORTB = (d7<<LCD_DB7) | (d6<<LCD_DB6) | (d5<<LCD_DB5) | (d4<<LCD_DB4) | (d3<<LCD_DB3) | (d2<<LCD_DB2) | (d1<<LCD_DB1) | (d0<<LCD_DB0);
 }
 
 /* Short enable to send bits to LCD */
-static void enable( void )
+void enable( void )
 {
 	PORTC |= (1 << LCD_EN);     // Enable auf 1 setzen
 	_delay_us(20);  // kurze Pause
 	PORTC &= ~(1 << LCD_EN);    // Enable auf 0 setzen
 }
 
-static void printChar(int data) {
+void printChar(int data) {
 	/* Set pins to send data */
 	PORTC |= (1 << LCD_RS);
 	PORTC &= ~(1 << LCD_RW);
@@ -276,7 +235,7 @@ static void printChar(int data) {
 	_delay_us(50);
 }
 
-static void printText(char text[256]) {
+void printText(char text[256]) {
 	int i = 0;
 	/*
 	* Loop through array and print
@@ -297,13 +256,13 @@ static void printText(char text[256]) {
 }
 
 /* Clearing the LCD */
-static void clearLcd(void) {
+void clearLcd(void) {
 	setPins(0, 0,   0, 0, 0, 0,   0, 0, 0, 1);
 	enable();
 	_delay_ms(2);
 }
 
-static void initDisplay(void) {
+void initDisplay(void) {
 	resetPins();
 	/* Display initialization sequence */
 	setPins(0, 0,   0, 0, 1, 1,   0, 0, 0, 0);
@@ -409,8 +368,10 @@ void calibrate(void) {
 	/* Wait until button isn't pressed */
 	
 	waitForMFTPush();
-	float dbm50Signal = (float) currentLogAmpSignal;
-	stepSize = (reference0dbm - dbm50Signal) / 50;
+	reference50dbm = (float) currentLogAmpSignal;
+	eeprom_busy_wait();
+	eeprom_write_float(&EE_ADDRESS_50DBM_REFERENCE, reference50dbm);
+	stepSize = (reference0dbm - reference50dbm) / 50;
 	eeprom_busy_wait();
 	eeprom_write_float(&EE_ADDRESS_DBM_STEPSIZE, stepSize);
 
@@ -425,15 +386,40 @@ void calculate(void) {
 	}
 	measuredPower = (currentLogAmpSignal - reference0dbm) / stepSize;
 
-	measuredMilliwatt = pow(10.0, ((measuredPower / 10) - 3)) * 1000;
-	magneticFieldStrength = pow(10.0, (measuredPower + MAGNETIC_SONDE_CORR) / 20); // TODO Sondenkorrektur
+	measuredMilliwatt = pow(10, ((measuredPower / 10) - 3)) * 1000;
+	magneticFieldStrength = pow(10, (measuredPower + 60.0) / 20.0); // TODO Sondenkorrektur
 
 	setUserFlag(F_NEW_DATA);
 }
 
+void printAfloat(double var) {
+	uint32_t temp = var * 100;
+	uint16_t a = var;
+	uint16_t b = temp % 100;
+	char before[10];
+	char after[10];
+	sprintf(before, "%d", a);
+	sprintf(after, "%02d", b);
+	uint8_t i = 0;
+	do
+	{
+		printChar(before[i]);
+		i++;
+	} while (before[i] != NULL);
+	i=0;
+	if(after != NULL) {
+		printChar('.');
+	}
+	do
+	{
+		printChar(after[i]);
+		i++;
+	} while (after[i] != NULL);
+}
+
 bool floorValue = true;
 bool hugeChange = false;
-#define TEXT_MAGNATIC_FIELD "H = "
+#define TEXT_MAGNATIC_FIELD "0db:  "
 #define FORMULA_N 1
 #define FORMULA_A 0.01988
 #define frequency 13560000
@@ -445,6 +431,7 @@ void displayData(void) {
 		return;
 	}
 	double arrayAvrg = 0;
+	signed int aValue;
 	for(int j = 0; j < 40; j++) {
 		arrayAvrg += measuredValues[j];
 	}
@@ -453,13 +440,13 @@ void displayData(void) {
 		case MODE_POWER:
 			/* Arraywerte holen und Mittelwert bilden */
 			
-			measuredPower = arrayAvrg;
+			aValue = arrayAvrg;
 			/* Wenn Wert nicht geglättet werden soll wird currentLogAmpSignal genommen */
 			if(!floorValue) {
-				measuredPower = currentLogAmpSignal;
+				aValue = currentLogAmpSignal;
 			}
 			char str[6];
-			sprintf(str, "%d", measuredPower);
+			sprintf(str, "%d", aValue);
 			
 			/* Set cursor line 1,1 */
 			clearLcd();
@@ -478,7 +465,6 @@ void displayData(void) {
 			}
 			break;
 		case MODE_MAGNETIC_FIELD:
-			magneticFieldStrength = 0;
 			clearLcd();
 			printText(TEXT_MAGNATIC_FIELD);
 			double ergebnis = 2.56/1024 * (double)arrayAvrg;
@@ -492,66 +478,11 @@ void displayData(void) {
 			 * H = ----------------------
 			 *      N * A * w * µ0 * µr
 			 */
-			
 			ergebnis = ((Ue) / (FORMULA_N * FORMULA_A * FORMULA_w * FORMULA_MueNull * FORMULA_MueR)) * 1000;
-			
-			uint32_t temp = ergebnis * 100;
-			uint16_t a = ergebnis;
-			uint16_t b = temp % 100;
-			char before[4];
-			char after[2];
-			sprintf(before, "%d", a);
-			sprintf(after, "%d", b);
-			if(b < 10) {
-				char t = after[0];
-				after[0] = '0';
-				after[1] = t;
-			}
-			i = 0;
-			do
-			{
-				printChar(before[i]);
-				i++;
-			} while (before[i] != NULL);
-			i=0;
-			if(after != NULL) {
-				printChar('.');
-			}
-			do
-			{
-				printChar(after[i]);
-				i++;
-			} while (after[i] != NULL);
-			printText(" mA/m<");
+			printAfloat(reference0dbm);
+			printText("<50db: ");
 			//DBM
-			uint32_t temp2 = dBm * 100;
-			uint16_t a2 = dBm;
-			uint16_t b2 = temp2 % 100;
-			char before2[4];
-			char after2[2];
-			sprintf(before2, "%d", a2);
-			sprintf(after2, "%d", b2);
-			if(b2 < 10) {
-				char t2 = after[0];
-				after2[0] = '0';
-				after2[1] = t2;
-			}
-			i = 0;
-			do
-			{
-				printChar(before2[i]);
-				i++;
-			} while (before2[i] != NULL);
-			i=0;
-			if(after2 != NULL) {
-				printChar('.');
-			}
-			do
-			{
-				printChar(after2[i]);
-				i++;
-			} while (after2[i] != NULL);
-			printText(" d");
+			printAfloat(reference50dbm);
 			break;
 	}
 	unsetUserFlag(F_NEW_DATA);
@@ -647,6 +578,7 @@ int main(int argc, const char *argv[])
 	
 	// Initialisierung der ADC-Referenzwerte
 	reference0dbm = eeprom_read_float(&EE_ADDRESS_0DBM_REFERENCE);
+	reference50dbm = eeprom_read_float(&EE_ADDRESS_50DBM_REFERENCE);
 	stepSize = eeprom_read_float(&EE_ADDRESS_DBM_STEPSIZE);
 
 	setOpMode(MODE_POWER);
